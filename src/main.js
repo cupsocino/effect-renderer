@@ -1,4 +1,6 @@
 import "./styles.css";
+import skillCatalogue from "./skill_effect_catalogue.json";
+import { parseSkillSdataNames } from "./skill_sdata.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { DDSLoader } from "three/examples/jsm/loaders/DDSLoader.js";
@@ -203,15 +205,16 @@ function parseEft(buffer, label = "effect") {
     return { name, records };
   });
 
+  const warnings = [];
   for (const sequence of sequences) {
-    for (const record of sequence.records) {
-      if (record.effectId < 0 || record.effectId >= effects.length) {
-        throw new Error(`${label}: sequence ${sequence.name} references invalid component ${record.effectId}`);
-      }
-    }
+    sequence.records = sequence.records.filter((record) => {
+      if (record.effectId >= 0 && record.effectId < effects.length) return true;
+      warnings.push(`${label}: sequence ${sequence.name} references invalid component ${record.effectId}`);
+      return false;
+    });
   }
 
-  return { format: signature, meshes, textures, effects, sequences };
+  return { format: signature, meshes, textures, effects, sequences, warnings };
 }
 
 function parseEftEffect(reader, format, index) {
@@ -1360,9 +1363,18 @@ const dataRootLabel = document.querySelector("#dataRootLabel");
 const dataArchiveLabel = document.querySelector("#dataArchiveLabel");
 const dataRootInput = document.querySelector("#dataRootInput");
 const dataArchiveInput = document.querySelector("#dataArchiveInput");
+const libraryTabButton = document.querySelector("#libraryTabButton");
+const skillTabButton = document.querySelector("#skillTabButton");
+const libraryTab = document.querySelector("#libraryTab");
+const skillTab = document.querySelector("#skillTab");
 const libraryFileSelect = document.querySelector("#libraryFileSelect");
 const sequenceSelect = document.querySelector("#sequenceSelect");
 const effectSelect = document.querySelector("#effectSelect");
+const skillClassSelect = document.querySelector("#skillClassSelect");
+const skillSelect = document.querySelector("#skillSelect");
+const skillSequenceSelect = document.querySelector("#skillSequenceSelect");
+const skillEffectDetail = document.querySelector("#skillEffectDetail");
+const skillRoleButtons = Array.from(document.querySelectorAll("[data-skill-role]"));
 const particleLevel = document.querySelector("#particleLevel");
 const particleLevelLabel = document.querySelector("#particleLevelLabel");
 const replayDelaySeconds = document.querySelector("#replayDelaySeconds");
@@ -1375,6 +1387,20 @@ const placementInputs = {
   roll: document.querySelector("#placementRoll"),
 };
 let indexedLibraries = [];
+let activeBrowserTab = "library";
+let selectedSkillRole = "startCast";
+let skillNameOverrides = new Map();
+const defaultSkillRolePriority = [
+  "secondaryOrStop",
+  "startCast",
+  "casting",
+  "castProjectile",
+  "area",
+  "target",
+];
+const skillRoleLabels = new Map([
+  ["secondaryOrStop", "Secondary/Status"],
+]);
 
 function log(message) {
   logElement.textContent = `${new Date().toLocaleTimeString()} ${message}\n${logElement.textContent}`.slice(0, 6000);
@@ -1398,6 +1424,41 @@ function updateIndexedEffectStatus(sourceLabel) {
     `${indexedLibraries.length} ${noun} available`,
     `${sourceLabel}; choose one from the EFT list below.`,
   );
+}
+
+async function refreshSkillNamesFromIndexedData() {
+  const selectedId = Number(skillSelect.value);
+  const loaded = await assetStore.readBuffer([
+    "data/character/skill.sdata",
+    "character/skill.sdata",
+    "skill.sdata",
+  ]);
+
+  if (!loaded) {
+    skillNameOverrides = new Map();
+    populateSkillSelect(selectedId);
+    updateSkillEffectDetail(selectedRole());
+    log("skill names: no skill.sdata found; using built-in catalogue names");
+    return "using built-in skill names";
+  }
+
+  try {
+    const names = parseSkillSdataNames(loaded.buffer);
+    skillNameOverrides = names;
+    populateSkillSelect(selectedId);
+    updateSkillEffectDetail(selectedRole());
+    const visibleNameCount = skillCatalogue.skills
+      .filter((skill) => skillHasAnyEffect(skill) && names.has(skill.id))
+      .length;
+    log(`loaded ${visibleNameCount} displayed skill names from ${loaded.path}`);
+    return `loaded ${visibleNameCount} skill names from ${loaded.path}`;
+  } catch (error) {
+    skillNameOverrides = new Map();
+    populateSkillSelect(selectedId);
+    updateSkillEffectDetail(selectedRole());
+    log(`skill names: ${loaded.path}: ${error.message}; using built-in catalogue names`);
+    return "using built-in skill names";
+  }
 }
 
 function effectLoadSummary(library) {
@@ -1439,24 +1500,39 @@ preview.setPlacement(readPlacementControls());
 preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
 resetSelectors("Load an EFT file first");
 populateLibraryFileSelect([]);
+populateSkillBrowser();
+setBrowserTab("library");
 
 directoryModeButton.addEventListener("click", () => setDataSourceMode("directory"));
 archiveModeButton.addEventListener("click", () => setDataSourceMode("archive"));
+libraryTabButton.addEventListener("click", () => setBrowserTab("library"));
+skillTabButton.addEventListener("click", () => setBrowserTab("skill"));
+skillClassSelect.addEventListener("change", () => {
+  populateSkillSelect();
+  selectDefaultSkillRole();
+});
+skillSelect.addEventListener("change", () => selectDefaultSkillRole());
+skillSequenceSelect.addEventListener("change", () => loadSelectedSkillEffect());
+for (const button of skillRoleButtons) {
+  button.addEventListener("click", () => selectSkillRole(button.dataset.skillRole));
+}
 
 dataRootInput.addEventListener("change", async (event) => {
   await assetStore.addFiles(event.target.files);
+  const skillNameStatus = await refreshSkillNamesFromIndexedData();
   indexedLibraries = assetStore.listEffectLibraries();
   populateLibraryFileSelect(indexedLibraries);
-  updateIndexedEffectStatus(`Indexed ${event.target.files.length} data files`);
+  updateIndexedEffectStatus(`Indexed ${event.target.files.length} data files; ${skillNameStatus}`);
   log(`indexed ${event.target.files.length} files from data directory; found ${indexedLibraries.length} EFT libraries`);
   if (preview.library) await rebuild();
 });
 
 dataArchiveInput.addEventListener("change", async (event) => {
   await assetStore.addFiles(event.target.files);
+  const skillNameStatus = await refreshSkillNamesFromIndexedData();
   indexedLibraries = assetStore.listEffectLibraries();
   populateLibraryFileSelect(indexedLibraries);
-  updateIndexedEffectStatus(`Indexed ${event.target.files.length} archive files`);
+  updateIndexedEffectStatus(`Indexed ${event.target.files.length} archive files; ${skillNameStatus}`);
   log(`indexed ${event.target.files.length} archive files; found ${indexedLibraries.length} EFT libraries`);
   if (preview.library) await rebuild();
 });
@@ -1476,15 +1552,21 @@ document.querySelector("#eftInput").addEventListener("change", async (event) => 
   await loadEftFile(file, file.name);
 });
 
-async function loadEftFile(file, label) {
+async function loadEftFile(file, label, selectorOptions = {}) {
   try {
     const library = parseEft(await file.arrayBuffer(), file.name);
     preview.setLibrary(library);
     populateSelectors(library);
+    applySelectorOptions(library, selectorOptions);
     const summary = effectLoadSummary(library);
-    libraryStats.textContent = summary;
-    setAssetStatus("loaded", `Loaded ${label}`, summary);
+    const warnings = library.warnings ?? [];
+    const detail = warnings.length === 0
+      ? summary
+      : `${summary}; skipped ${warnings.length} invalid sequence ${warnings.length === 1 ? "record" : "records"}`;
+    libraryStats.textContent = detail;
+    setAssetStatus("loaded", `Loaded ${label}`, detail);
     log(`loaded ${label}: ${library.effects.length} components, ${library.sequences.length} sequences`);
+    for (const warning of warnings) log(`warning: ${warning}`);
     await rebuild();
   } catch (error) {
     resetSelectors("EFT parse failed");
@@ -1517,6 +1599,324 @@ particleLevel.addEventListener("change", rebuild);
 replayDelaySeconds.addEventListener("input", () => {
   preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
 });
+
+function setBrowserTab(tab) {
+  activeBrowserTab = tab;
+  const skillMode = tab === "skill";
+  libraryTab.hidden = skillMode;
+  skillTab.hidden = !skillMode;
+  libraryTabButton.classList.toggle("active", !skillMode);
+  skillTabButton.classList.toggle("active", skillMode);
+  libraryTabButton.setAttribute("aria-selected", String(!skillMode));
+  skillTabButton.setAttribute("aria-selected", String(skillMode));
+}
+
+function populateSkillBrowser() {
+  populateSkillClassSelect();
+  populateSkillSelect();
+  selectDefaultSkillRole(false);
+}
+
+function populateSkillClassSelect() {
+  skillClassSelect.replaceChildren();
+  for (const className of [...skillCatalogue.classes, skillCatalogue.uncategorizedLabel]) {
+    const option = document.createElement("option");
+    option.value = className;
+    option.textContent = className;
+    skillClassSelect.appendChild(option);
+  }
+}
+
+function populateSkillSelect(preferredSkillId = Number(skillSelect.value)) {
+  const skills = skillsForCurrentClass();
+  skillSelect.replaceChildren();
+  if (skills.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No skills in this group";
+    option.disabled = true;
+    option.selected = true;
+    skillSelect.appendChild(option);
+    skillSelect.disabled = true;
+    return;
+  }
+
+  let selected = false;
+  for (const skill of skills) {
+    const option = document.createElement("option");
+    const displayName = skillDisplayName(skill);
+    option.value = String(skill.id);
+    option.textContent = `${skill.id} ${displayName}`;
+    option.title = `${displayName}; levels ${skill.levels}; cast time ${skill.readyTimes}`;
+    if (skill.id === preferredSkillId) {
+      option.selected = true;
+      selected = true;
+    }
+    skillSelect.appendChild(option);
+  }
+  if (!selected) skillSelect.selectedIndex = 0;
+  skillSelect.disabled = false;
+}
+
+function skillsForCurrentClass() {
+  const selectedClass = skillClassSelect.value || skillCatalogue.classes[0];
+  const uncategorized = selectedClass === skillCatalogue.uncategorizedLabel;
+  return skillCatalogue.skills
+    .filter(skillHasAnyEffect)
+    .filter((skill) => uncategorized ? skill.classes.length === 0 : skill.classes.includes(selectedClass))
+    .sort((left, right) => left.id - right.id);
+}
+
+function skillHasAnyEffect(skill) {
+  return Object.values(skill?.roles ?? {})
+    .some((role) => typeof role.effect === "string" && role.effect.trim() !== "");
+}
+
+function skillDisplayName(skill) {
+  return skillNameOverrides.get(skill.id) ?? skill.name;
+}
+
+function selectedSkill() {
+  const id = Number(skillSelect.value);
+  return skillCatalogue.skills
+    .find((skill) => skill.id === id && skillHasAnyEffect(skill)) ?? null;
+}
+
+function selectedRole(skill = selectedSkill()) {
+  return skill?.roles?.[selectedSkillRole] ?? null;
+}
+
+function selectDefaultSkillRole(loadEffect = true) {
+  const skill = selectedSkill();
+  const firstAvailable = defaultSkillRoleCandidates().find((role) => skillRoleAvailable(skill, role.key));
+  selectedSkillRole = firstAvailable?.key ?? skillCatalogue.roles[0].key;
+  populateSkillRoleButtons(skill);
+  populateSkillSequenceSelect(selectedRole(skill));
+  updateSkillEffectDetail(selectedRole(skill));
+  if (loadEffect && firstAvailable) loadSelectedSkillEffect();
+}
+
+function defaultSkillRoleCandidates() {
+  const roleByKey = new Map(skillCatalogue.roles.map((role) => [role.key, role]));
+  const preferred = defaultSkillRolePriority
+    .map((roleKey) => roleByKey.get(roleKey))
+    .filter(Boolean);
+  const remaining = skillCatalogue.roles.filter((role) => !defaultSkillRolePriority.includes(role.key));
+  return [...preferred, ...remaining];
+}
+
+function skillRoleLabel(role) {
+  return skillRoleLabels.get(role?.key) ?? role?.label ?? "selected";
+}
+
+function selectSkillRole(roleKey) {
+  selectedSkillRole = roleKey;
+  const skill = selectedSkill();
+  populateSkillRoleButtons(skill);
+  populateSkillSequenceSelect(selectedRole(skill));
+  updateSkillEffectDetail(selectedRole(skill));
+  loadSelectedSkillEffect();
+}
+
+function populateSkillRoleButtons(skill) {
+  for (const button of skillRoleButtons) {
+    const role = skill?.roles?.[button.dataset.skillRole];
+    const duplicateStartCast = roleDuplicatesStartCast(skill, role);
+    const available = Boolean(role?.effect) && !duplicateStartCast;
+    button.disabled = !available;
+    button.classList.toggle("active", button.dataset.skillRole === selectedSkillRole && available);
+    button.classList.toggle("unavailable", !available);
+    button.title = duplicateStartCast
+      ? "Uses the Start Cast effect in ps0198"
+      : available
+        ? role.effect
+        : "No effect for this skill role";
+  }
+}
+
+function skillRoleAvailable(skill, roleKey) {
+  const role = skill?.roles?.[roleKey];
+  return Boolean(role?.effect) && !roleDuplicatesStartCast(skill, role);
+}
+
+function roleDuplicatesStartCast(skill, role) {
+  const startCast = skill?.roles?.startCast;
+  return role?.key === "casting"
+    && role.source === "sub_584170"
+    && role.effect
+    && role.effect === startCast?.effect;
+}
+
+function populateSkillSequenceSelect(role) {
+  skillSequenceSelect.replaceChildren();
+  if (!role?.effect || role.requestedSequenceIds.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = role?.effect ? "No sequence requested" : "No effect available";
+    option.disabled = true;
+    option.selected = true;
+    skillSequenceSelect.appendChild(option);
+    skillSequenceSelect.disabled = true;
+    return;
+  }
+
+  const sequenceOptions = skillSequenceOptions(role);
+  if (sequenceOptions.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No sequence requested";
+    option.disabled = true;
+    option.selected = true;
+    skillSequenceSelect.appendChild(option);
+    skillSequenceSelect.disabled = true;
+    return;
+  }
+
+  for (const sequenceOption of sequenceOptions) {
+    const option = document.createElement("option");
+    option.value = String(sequenceOption.sequenceId);
+    option.textContent = sequenceOption.label;
+    skillSequenceSelect.appendChild(option);
+  }
+  skillSequenceSelect.disabled = false;
+}
+
+function skillSequenceOptions(role) {
+  const requestedIds = role?.requestedSequenceIds ?? [];
+  if (!role?.effect || requestedIds.length === 0) return [];
+
+  const mappings = parseSequenceMappings(role.sequenceNames);
+  const entries = requestedIds
+    .map((requestedId) => mappings.get(requestedId) ?? {
+      requestedId,
+      effectiveId: requestedId,
+      name: "",
+    })
+    .filter((entry) => Number.isFinite(entry.requestedId) && Number.isFinite(entry.effectiveId));
+  if (entries.length === 0) return [];
+
+  if ((role.sequenceExpression || "").trim() !== "level - 1") {
+    const optionsBySequence = new Map();
+    for (const entry of entries) {
+      if (!optionsBySequence.has(entry.effectiveId)) {
+        optionsBySequence.set(entry.effectiveId, {
+          sequenceId: entry.effectiveId,
+          label: sequenceLabel(entry.effectiveId, entry.name),
+        });
+      }
+    }
+    return [...optionsBySequence.values()];
+  }
+
+  const groups = [];
+  for (const entry of entries) {
+    const current = groups[groups.length - 1];
+    if (current && current.sequenceId === entry.effectiveId && current.endRequestedId + 1 === entry.requestedId) {
+      current.endRequestedId = entry.requestedId;
+      continue;
+    }
+
+    groups.push({
+      sequenceId: entry.effectiveId,
+      startRequestedId: entry.requestedId,
+      endRequestedId: entry.requestedId,
+      name: entry.name,
+    });
+  }
+
+  const highestRequestedId = Math.max(...entries.map((entry) => entry.requestedId));
+  return groups.map((group) => ({
+    sequenceId: group.sequenceId,
+    label: `${levelRangeLabel(group.startRequestedId, group.endRequestedId, highestRequestedId)} - ${sequenceLabel(group.sequenceId, group.name)}`,
+  }));
+}
+
+function parseSequenceMappings(value) {
+  const mappings = new Map();
+  for (const part of (value || "").split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.indexOf(":");
+    if (separator < 0) continue;
+    const requestedId = Number(trimmed.slice(0, separator));
+    const rawName = trimmed.slice(separator + 1);
+    const clamped = rawName.match(/^<clamps to\s+(\d+):(.*)>$/);
+    const effectiveId = clamped ? Number(clamped[1]) : requestedId;
+    const name = clamped ? clamped[2] : rawName;
+    if (Number.isFinite(requestedId) && Number.isFinite(effectiveId)) {
+      mappings.set(requestedId, { requestedId, effectiveId, name });
+    }
+  }
+  return mappings;
+}
+
+function levelRangeLabel(startRequestedId, endRequestedId, highestRequestedId) {
+  const startLevel = startRequestedId + 1;
+  const endLevel = endRequestedId + 1;
+  if (startRequestedId === endRequestedId) return `Lv${startLevel}`;
+  if (endRequestedId === highestRequestedId) return `Lv${startLevel}+`;
+  return `Lv${startLevel}-Lv${endLevel}`;
+}
+
+function sequenceLabel(sequenceId, name) {
+  return name ? `Sequence ${sequenceId} (${name})` : `Sequence ${sequenceId}`;
+}
+
+function updateSkillEffectDetail(role) {
+  const skill = selectedSkill();
+  if (!skill) {
+    skillEffectDetail.textContent = "No skill selected.";
+    return;
+  }
+  const roleLabel = skillRoleLabel(role);
+  const displayName = skillDisplayName(skill);
+  if (!role?.effect) {
+    skillEffectDetail.textContent = `${skill.id} ${displayName}: no ${roleLabel} effect.`;
+    return;
+  }
+
+  const source = role.source ? `
+Source: ${role.source}` : "";
+  const sequenceSummary = skillSequenceOptions(role).map((option) => option.label).join("; ");
+  const sequences = sequenceSummary ? `
+Sequences: ${sequenceSummary}` : "";
+  skillEffectDetail.textContent = `${skill.id} ${displayName}
+${roleLabel}: ${role.effect}${source}${sequences}`;
+}
+
+async function loadSelectedSkillEffect() {
+  const role = selectedRole();
+  updateSkillEffectDetail(role);
+  if (!role?.effect) return;
+
+  const file = assetStore.findFile(effectPathCandidates(role.effect));
+  if (!file) {
+    setAssetStatus("error", "Skill effect not indexed", `Could not find ${role.effect}. Select a data directory or SAH/SAF archive that contains it.`);
+    log(`missing skill effect ${role.effect}`);
+    return;
+  }
+
+  const requestedSequenceIndex = Number(skillSequenceSelect.value || role.requestedSequenceIds[0] || 0);
+  await loadEftFile(file, role.effect, { sequenceIndex: requestedSequenceIndex, effectIndex: -1 });
+  setBrowserTab(activeBrowserTab);
+}
+
+function effectPathCandidates(effectPath) {
+  const normalized = normalizePath(effectPath);
+  const withoutDataPrefix = normalized.replace(/^data\//, "");
+  return [normalized, withoutDataPrefix, filenameFromPath(normalized)];
+}
+
+function applySelectorOptions(library, options) {
+  if (Number.isFinite(options.sequenceIndex) && library.sequences.length > 0) {
+    sequenceSelect.value = String(clamp(options.sequenceIndex, 0, library.sequences.length - 1));
+  }
+  if (Number.isFinite(options.effectIndex) && library.effects.length > 0) {
+    effectSelect.value = String(clamp(options.effectIndex, -1, library.effects.length - 1));
+  } else if (library.sequences.length > 0) {
+    effectSelect.value = "-1";
+  }
+}
 
 function populateLibraryFileSelect(libraries) {
   libraryFileSelect.replaceChildren();

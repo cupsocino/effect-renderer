@@ -36,25 +36,63 @@
           </div>
         </div>
 
-        <label>
-          EFT from data directory
-          <select id="libraryFileSelect"></select>
-        </label>
+        <div class="browser-tabs" role="tablist" aria-label="Effect browser mode">
+          <button id="libraryTabButton" type="button" class="active" role="tab" aria-selected="true" aria-controls="libraryTab">EFT Library</button>
+          <button id="skillTabButton" type="button" role="tab" aria-selected="false" aria-controls="skillTab">Skill Effects</button>
+        </div>
 
-        <label>
-          EFT / EF2 / EF3 file
-          <input id="eftInput" type="file" accept=".eft,.ef2,.ef3,.EFT,.EF2,.EF3" />
-        </label>
+        <section id="libraryTab" class="browser-panel" role="tabpanel" aria-labelledby="libraryTabButton">
+          <label>
+            EFT from data directory
+            <select id="libraryFileSelect"></select>
+          </label>
 
-        <label>
-          Sequence
-          <select id="sequenceSelect"></select>
-        </label>
+          <label>
+            EFT / EF2 / EF3 file
+            <input id="eftInput" type="file" accept=".eft,.ef2,.ef3,.EFT,.EF2,.EF3" />
+          </label>
 
-        <label>
-          Component
-          <select id="effectSelect"></select>
-        </label>
+          <label>
+            Sequence
+            <select id="sequenceSelect"></select>
+          </label>
+
+          <label>
+            Component
+            <select id="effectSelect"></select>
+          </label>
+        </section>
+
+        <section id="skillTab" class="browser-panel" role="tabpanel" aria-labelledby="skillTabButton" hidden>
+          <label>
+            Skill group
+            <select id="skillClassSelect"></select>
+          </label>
+
+          <label>
+            Skill
+            <select id="skillSelect"></select>
+          </label>
+
+          <fieldset class="skill-role-fieldset">
+            <legend>Skill effect</legend>
+            <div id="skillRoleButtons" class="skill-role-buttons">
+              <button type="button" data-skill-role="startCast">Start Cast</button>
+              <button type="button" data-skill-role="casting">Casting</button>
+              <button type="button" data-skill-role="castProjectile">Cast/Projectile</button>
+              <button type="button" data-skill-role="secondaryOrStop">Secondary/Status</button>
+              <button type="button" data-skill-role="area">Area</button>
+              <button type="button" data-skill-role="target">Target/Impact</button>
+            </div>
+          </fieldset>
+
+          <label>
+            Requested sequence
+            <select id="skillSequenceSelect"></select>
+          </label>
+
+          <div id="skillEffectDetail" class="skill-effect-detail">Select a skill effect.</div>
+        </section>
 
         <label>
           Particle level <span id="particleLevelLabel">5</span>
