@@ -638,6 +638,10 @@ class RenderedEffectEmitter {
     }
 
     if (!emitsParticles(this.effect)) {
+      if (!this.oneShotEmitted) {
+        this.spawnParticle(sampledParticleLife(this.effect, this.seed));
+        this.oneShotEmitted = true;
+      }
       return;
     }
 
@@ -918,7 +922,10 @@ function selectTexture(effect, textures, seconds) {
 
 function effectParticleCount(effect, level) {
   level = clamp(level, 0, maxParticleLevel);
-  if (!emitsParticles(effect)) return 0;
+  // Some EFT components are authored as a single stamped mesh/billboard rather
+  // than as particle emitters. The retail client still draws those components
+  // even when their emission rate or lifetime is zero.
+  if (!emitsParticles(effect)) return 1;
   if (level === 0) return 0;
   if (isOneShotEmitter(effect)) return 1;
   const multiplier = level / 5;
@@ -1116,7 +1123,7 @@ function randomVelocity(effect, seed) {
 function sampledParticleLife(effect, seed) {
   const min = Math.max(0, effect.lifeMin);
   const max = Math.max(min, effect.lifeMax);
-  if (max <= 0) return effectDuration(effect);
+  if (max <= 0) return effectPlaybackDuration(effect);
   return lerp(min, max, randomValue(seed + 71.3));
 }
 
