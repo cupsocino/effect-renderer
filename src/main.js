@@ -1123,7 +1123,7 @@ function randomVelocity(effect, seed) {
 function sampledParticleLife(effect, seed) {
   const min = Math.max(0, effect.lifeMin);
   const max = Math.max(min, effect.lifeMax);
-  if (max <= 0) return effectPlaybackDuration(effect);
+  if (max <= 0) return Number.POSITIVE_INFINITY;
   return lerp(min, max, randomValue(seed + 71.3));
 }
 
