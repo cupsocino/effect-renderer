@@ -233,3 +233,58 @@ button:hover {
   border-radius: 6px;
   color: #cdd5df;
 }
+
+.browser-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.browser-tabs button.active {
+  border-color: #7db7ff;
+  background: #17304d;
+}
+
+.browser-panel {
+  margin: 0 0 14px;
+}
+
+.skill-role-fieldset {
+  padding: 8px;
+}
+
+.skill-role-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.skill-role-buttons button {
+  min-height: 38px;
+  overflow-wrap: anywhere;
+}
+
+.skill-role-buttons button.active {
+  border-color: #7db7ff;
+  background: #17304d;
+}
+
+.skill-role-buttons button.unavailable,
+.skill-role-buttons button:disabled {
+  cursor: not-allowed;
+  color: #697280;
+  border-color: #2c323b;
+  background: #1b2028;
+}
+
+.skill-effect-detail {
+  margin: 0 0 14px;
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #cdd5df;
+  border: 1px solid #30343b;
+  border-radius: 6px;
+  background: #10141a;
+}
