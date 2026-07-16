@@ -468,6 +468,7 @@ class EffectPreview {
     this.playbackDuration = 1;
     this.replayDelaySeconds = 1;
     this.clientLoopEnabled = false;
+    this.clientLoopPersistentClock = false;
     this.paused = false;
     this.placement = defaultPlacement;
   }
@@ -507,6 +508,7 @@ class EffectPreview {
     if (!this.library) return;
     const records = selectedEffectRecords(this.library, selection);
     this.playbackDuration = effectRecordsDuration(records);
+    this.clientLoopPersistentClock = usesPersistentClientLoop(this.library, records);
     for (const record of records) {
       const effect = this.library.effects[record.effectId];
       const resources = await this.loadResources(effect);
@@ -582,8 +584,11 @@ class EffectPreview {
     if (this.paused) return;
     const elapsed = (performance.now() - this.startedAt) / 1000;
     if (this.clientLoopEnabled) {
+      const seconds = this.clientLoopPersistentClock
+        ? elapsed
+        : positiveMod(elapsed, Math.max(0.001, this.playbackDuration));
       const basis = cameraBasis(this.camera);
-      for (const object of this.objects) object.update(elapsed, basis, this.placement);
+      for (const object of this.objects) object.update(seconds, basis, this.placement);
       return;
     }
 
@@ -817,6 +822,14 @@ function selectedEffectRecords(library, selection) {
 
 function effectRecordsDuration(records) {
   return Math.max(1, ...records.map((record) => record.startTime + record.duration));
+}
+
+function usesPersistentClientLoop(library, records) {
+  return records.some((record) => {
+    const effect = library.effects[record.effectId];
+    if (!effect) return false;
+    return effect.loop || !emitsParticles(effect);
+  });
 }
 
 function create3deGeometry(model, sample) {
