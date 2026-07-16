@@ -467,8 +467,7 @@ class EffectPreview {
     this.startedAt = performance.now();
     this.playbackDuration = 1;
     this.replayDelaySeconds = 1;
-    this.clientLoopEnabled = false;
-    this.clientLoopPersistentClock = false;
+    this.automaticLoopEnabled = false;
     this.paused = false;
     this.placement = defaultPlacement;
   }
@@ -486,12 +485,6 @@ class EffectPreview {
     this.replayDelaySeconds = Math.max(0, seconds);
   }
 
-  setClientLoopEnabled(enabled) {
-    if (this.clientLoopEnabled === enabled) return;
-    this.clientLoopEnabled = enabled;
-    this.restart();
-  }
-
   restart() {
     this.startedAt = performance.now();
     for (const object of this.objects) object.reset();
@@ -501,6 +494,7 @@ class EffectPreview {
     for (const object of this.objects) object.dispose();
     this.objects = [];
     this.group.clear();
+    this.automaticLoopEnabled = false;
   }
 
   async rebuild(selection, particleLevel) {
@@ -508,7 +502,7 @@ class EffectPreview {
     if (!this.library) return;
     const records = selectedEffectRecords(this.library, selection);
     this.playbackDuration = effectRecordsDuration(records);
-    this.clientLoopPersistentClock = usesPersistentClientLoop(this.library, records);
+    this.automaticLoopEnabled = usesAutomaticClientLoop(this.library, records);
     for (const record of records) {
       const effect = this.library.effects[record.effectId];
       const resources = await this.loadResources(effect);
@@ -583,12 +577,9 @@ class EffectPreview {
   update() {
     if (this.paused) return;
     const elapsed = (performance.now() - this.startedAt) / 1000;
-    if (this.clientLoopEnabled) {
-      const seconds = this.clientLoopPersistentClock
-        ? elapsed
-        : positiveMod(elapsed, Math.max(0.001, this.playbackDuration));
+    if (this.automaticLoopEnabled) {
       const basis = cameraBasis(this.camera);
-      for (const object of this.objects) object.update(seconds, basis, this.placement);
+      for (const object of this.objects) object.update(elapsed, basis, this.placement);
       return;
     }
 
@@ -824,11 +815,10 @@ function effectRecordsDuration(records) {
   return Math.max(1, ...records.map((record) => record.startTime + record.duration));
 }
 
-function usesPersistentClientLoop(library, records) {
+function usesAutomaticClientLoop(library, records) {
   return records.some((record) => {
     const effect = library.effects[record.effectId];
-    if (!effect) return false;
-    return effect.loop || !emitsParticles(effect);
+    return Boolean(effect?.loop);
   });
 }
 
@@ -1416,7 +1406,6 @@ const skillRoleButtons = Array.from(document.querySelectorAll("[data-skill-role]
 const particleLevel = document.querySelector("#particleLevel");
 const particleLevelLabel = document.querySelector("#particleLevelLabel");
 const replayDelaySeconds = document.querySelector("#replayDelaySeconds");
-const clientLoopEffect = document.querySelector("#clientLoopEffect");
 const placementInputs = {
   x: document.querySelector("#placementX"),
   y: document.querySelector("#placementY"),
@@ -1537,8 +1526,8 @@ const assetStore = new AssetStore(log);
 const preview = new EffectPreview(scene, camera, assetStore, log);
 preview.setPlacement(readPlacementControls());
 preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
-preview.setClientLoopEnabled(clientLoopEffect.checked);
 resetSelectors("Load an EFT file first");
+syncReplayDelayControl();
 populateLibraryFileSelect([]);
 populateSkillBrowser();
 setBrowserTab("library");
@@ -1639,12 +1628,6 @@ particleLevel.addEventListener("change", rebuild);
 replayDelaySeconds.addEventListener("input", () => {
   preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
 });
-
-clientLoopEffect.addEventListener("change", () => {
-  replayDelaySeconds.disabled = clientLoopEffect.checked;
-  preview.setClientLoopEnabled(clientLoopEffect.checked);
-});
-replayDelaySeconds.disabled = clientLoopEffect.checked;
 
 function setBrowserTab(tab) {
   activeBrowserTab = tab;
@@ -2032,6 +2015,8 @@ function resetSelectors(message) {
   sequenceSelect.replaceChildren();
   effectSelect.replaceChildren();
   effectStats.textContent = "No components";
+  preview.automaticLoopEnabled = false;
+  syncReplayDelayControl();
 
   for (const select of [sequenceSelect, effectSelect]) {
     const option = document.createElement("option");
@@ -2093,7 +2078,11 @@ function populateSelectors(library) {
 }
 
 async function rebuild() {
-  if (!preview.library) return;
+  if (!preview.library) {
+    preview.automaticLoopEnabled = false;
+    syncReplayDelayControl();
+    return;
+  }
   try {
     const selection = {
       sequenceIndex: Number(sequenceSelect.value || 0),
@@ -2105,6 +2094,8 @@ async function rebuild() {
     log(`rebuilt ${preview.objects.length} render objects`);
   } catch (error) {
     log(error.stack || error.message);
+  } finally {
+    syncReplayDelayControl();
   }
 }
 
@@ -2124,6 +2115,17 @@ function readPlacementControls() {
 function readNumericInput(input) {
   const value = Number(input.value);
   return Number.isFinite(value) ? value : 0;
+}
+
+function syncReplayDelayControl() {
+  const looping = preview.automaticLoopEnabled;
+  const tooltip = looping
+    ? "Replay delay is disabled because the selected effect loops in the client."
+    : "";
+  replayDelaySeconds.disabled = looping;
+  replayDelaySeconds.title = tooltip;
+  const label = replayDelaySeconds.closest("label");
+  if (label) label.title = tooltip;
 }
 
 function selectedEffectBaseAxisSummary(library, selection) {
