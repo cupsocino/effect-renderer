@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shaiya EFT Renderer</title>
+  </head>
+  <body>
+    <main id="app">
+      <section id="viewport"></section>
+      <aside id="panel">
+        <h1>EFT Renderer</h1>
+
+        <label>
+          Data directory
+          <input id="dataRootInput" type="file" webkitdirectory multiple />
+        </label>
+
+        <label>
+          EFT from data directory
+          <select id="libraryFileSelect"></select>
+        </label>
+
+        <label>
+          EFT / EF2 / EF3 file
+          <input id="eftInput" type="file" accept=".eft,.ef2,.ef3,.EFT,.EF2,.EF3" />
+        </label>
+
+        <label>
+          Sequence
+          <select id="sequenceSelect"></select>
+        </label>
+
+        <label>
+          Component
+          <select id="effectSelect"></select>
+        </label>
+
+        <label>
+          Particle level <span id="particleLevelLabel">5</span>
+          <input id="particleLevel" type="range" min="0" max="20" value="5" />
+        </label>
+
+        <label>
+          Replay delay
+          <input id="replayDelaySeconds" type="number" min="0" step="0.5" value="5" />
+        </label>
+
+        <fieldset>
+          <legend>Placement</legend>
+          <div class="placement-grid">
+            <label>
+              <span>X</span>
+              <input id="placementX" type="number" value="0" step="0.5" />
+            </label>
+            <label>
+              <span>Y</span>
+              <input id="placementY" type="number" value="0" step="0.5" />
+            </label>
+            <label>
+              <span>Z</span>
+              <input id="placementZ" type="number" value="0" step="0.5" />
+            </label>
+            <label>
+              <span>Yaw</span>
+              <input id="placementYaw" type="number" value="0" step="1" />
+            </label>
+            <label>
+              <span>Pitch</span>
+              <input id="placementPitch" type="number" value="0" step="1" />
+            </label>
+            <label>
+              <span>Roll</span>
+              <input id="placementRoll" type="number" value="0" step="1" />
+            </label>
+          </div>
+          <button id="resetPlacementButton" type="button">Reset Placement</button>
+        </fieldset>
+
+        <div class="button-row">
+          <button id="rebuildButton" type="button">Rebuild</button>
+          <button id="pauseButton" type="button">Pause</button>
+        </div>
+
+        <dl id="stats">
+          <dt>Library</dt>
+          <dd id="libraryStats">No EFT loaded</dd>
+          <dt>Rendered</dt>
+          <dd id="renderStats">0 objects</dd>
+          <dt>Components</dt>
+          <dd id="effectStats">No components</dd>
+        </dl>
+
+        <pre id="log"></pre>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
