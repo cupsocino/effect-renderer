@@ -322,7 +322,7 @@ class EffectPreview {
     this.objects = [];
     this.startedAt = performance.now();
     this.playbackDuration = 1;
-    this.replayDelaySeconds = 5;
+    this.replayDelaySeconds = 1;
     this.paused = false;
     this.placement = defaultPlacement;
   }
