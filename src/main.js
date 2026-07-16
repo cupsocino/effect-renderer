@@ -1445,7 +1445,7 @@ document.querySelector("#dataArchiveInput").addEventListener("change", async (ev
 libraryFileSelect.addEventListener("change", async () => {
   const entry = indexedLibraries[Number(libraryFileSelect.value)];
   if (!entry) return;
-  await loadEftFile(entry.file, entry.displayPath);
+  await loadEftFile(entry.file, entry.path);
 });
 
 document.querySelector("#eftInput").addEventListener("change", async (event) => {
@@ -1518,13 +1518,49 @@ function populateLibraryFileSelect(libraries) {
   placeholder.disabled = true;
   placeholder.selected = true;
   libraryFileSelect.appendChild(placeholder);
-  libraries.forEach((library, index) => {
-    const option = document.createElement("option");
-    option.value = String(index);
-    option.textContent = library.displayPath;
-    libraryFileSelect.appendChild(option);
-  });
+
+  for (const group of groupEffectLibraries(libraries)) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = group.directory;
+    for (const library of group.libraries) {
+      const option = document.createElement("option");
+      option.value = String(library.index);
+      option.textContent = library.filename;
+      option.title = library.path;
+      optgroup.appendChild(option);
+    }
+    libraryFileSelect.appendChild(optgroup);
+  }
+
   libraryFileSelect.disabled = false;
+}
+
+function groupEffectLibraries(libraries) {
+  const groups = new Map();
+  libraries.forEach((library, index) => {
+    const directory = parentDirectory(library.path);
+    const entries = groups.get(directory) ?? [];
+    entries.push({ ...library, index, filename: filenameFromPath(library.path) });
+    groups.set(directory, entries);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([directory, groupLibraries]) => ({
+      directory,
+      libraries: groupLibraries.sort((left, right) => left.filename.localeCompare(right.filename)),
+    }));
+}
+
+function parentDirectory(path) {
+  const index = path.lastIndexOf("/");
+  if (index < 0) return "(root)";
+  return path.slice(0, index);
+}
+
+function filenameFromPath(path) {
+  const index = path.lastIndexOf("/");
+  return index < 0 ? path : path.slice(index + 1);
 }
 
 function resetSelectors(message) {
