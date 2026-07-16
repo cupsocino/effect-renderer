@@ -150,6 +150,16 @@ input[type="range"] {
   padding: 0;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
 fieldset {
   margin: 0 0 14px;
   padding: 10px 8px;

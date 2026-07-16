@@ -467,6 +467,7 @@ class EffectPreview {
     this.startedAt = performance.now();
     this.playbackDuration = 1;
     this.replayDelaySeconds = 1;
+    this.clientLoopEnabled = false;
     this.paused = false;
     this.placement = defaultPlacement;
   }
@@ -482,6 +483,17 @@ class EffectPreview {
 
   setReplayDelaySeconds(seconds) {
     this.replayDelaySeconds = Math.max(0, seconds);
+  }
+
+  setClientLoopEnabled(enabled) {
+    if (this.clientLoopEnabled === enabled) return;
+    this.clientLoopEnabled = enabled;
+    this.restart();
+  }
+
+  restart() {
+    this.startedAt = performance.now();
+    for (const object of this.objects) object.reset();
   }
 
   clear() {
@@ -569,6 +581,12 @@ class EffectPreview {
   update() {
     if (this.paused) return;
     const elapsed = (performance.now() - this.startedAt) / 1000;
+    if (this.clientLoopEnabled) {
+      const basis = cameraBasis(this.camera);
+      for (const object of this.objects) object.update(elapsed, basis, this.placement);
+      return;
+    }
+
     const cycleDuration = Math.max(0.001, this.playbackDuration + this.replayDelaySeconds);
     const seconds = positiveMod(elapsed, cycleDuration);
     if (seconds >= this.playbackDuration) {
@@ -1385,6 +1403,7 @@ const skillRoleButtons = Array.from(document.querySelectorAll("[data-skill-role]
 const particleLevel = document.querySelector("#particleLevel");
 const particleLevelLabel = document.querySelector("#particleLevelLabel");
 const replayDelaySeconds = document.querySelector("#replayDelaySeconds");
+const clientLoopEffect = document.querySelector("#clientLoopEffect");
 const placementInputs = {
   x: document.querySelector("#placementX"),
   y: document.querySelector("#placementY"),
@@ -1505,6 +1524,7 @@ const assetStore = new AssetStore(log);
 const preview = new EffectPreview(scene, camera, assetStore, log);
 preview.setPlacement(readPlacementControls());
 preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
+preview.setClientLoopEnabled(clientLoopEffect.checked);
 resetSelectors("Load an EFT file first");
 populateLibraryFileSelect([]);
 populateSkillBrowser();
@@ -1606,6 +1626,12 @@ particleLevel.addEventListener("change", rebuild);
 replayDelaySeconds.addEventListener("input", () => {
   preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
 });
+
+clientLoopEffect.addEventListener("change", () => {
+  replayDelaySeconds.disabled = clientLoopEffect.checked;
+  preview.setClientLoopEnabled(clientLoopEffect.checked);
+});
+replayDelaySeconds.disabled = clientLoopEffect.checked;
 
 function setBrowserTab(tab) {
   activeBrowserTab = tab;
