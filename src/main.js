@@ -10,6 +10,7 @@ const maxCatchUpSeconds = 0.5;
 // Shaiya model/effect strings are stored as Korean codepage bytes. Browser
 // TextDecoder exposes CP949-compatible decoding under the EUC-KR label.
 const textDecoder = new TextDecoder("euc-kr");
+const archiveTextDecoder = new TextDecoder("windows-1252");
 const defaultPlacementBasis = {
   right: [1, 0, 0],
   up: [0, 1, 0],
@@ -59,6 +60,15 @@ class BinaryReader {
     return value;
   }
 
+  i64(field = "i64") {
+    const value = this.view.getBigInt64(this.offset, true);
+    this.offset += 8;
+    if (value < 0 || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`${this.label}: invalid ${field} ${value}`);
+    }
+    return Number(value);
+  }
+
   f32(field = "f32") {
     const value = this.view.getFloat32(this.offset, true);
     this.offset += 4;
@@ -82,6 +92,88 @@ class BinaryReader {
     const end = bytes.length > 0 && bytes[bytes.length - 1] === 0 ? bytes.length - 1 : bytes.length;
     return textDecoder.decode(bytes.subarray(0, end));
   }
+}
+
+class ArchiveAsset {
+  constructor(safFile, entry) {
+    this.safFile = safFile;
+    this.entry = entry;
+    this.name = entry.path.split("/").at(-1) || entry.path;
+    this.webkitRelativePath = entry.path;
+    this.size = entry.length;
+    this.type = "";
+  }
+
+  blob() {
+    return this.safFile.slice(this.entry.offset, this.entry.offset + this.entry.length);
+  }
+
+  arrayBuffer() {
+    return this.blob().arrayBuffer();
+  }
+}
+
+function parseSah(buffer, label, safSize) {
+  const reader = new BinaryReader(buffer, label);
+  const signature = archiveTextDecoder.decode(reader.take(3, "signature"));
+  if (signature !== "SAH") throw new Error(`${label}: invalid SAH signature ${signature}`);
+
+  const version = reader.i32("version");
+  const expectedFileCount = reader.i32("file_count");
+  reader.take(40, "reserved");
+
+  const entries = [];
+  const rootName = readSahDirectory(reader, "", true, entries, safSize);
+  const trailingBytes = reader.remaining();
+  return { version, expectedFileCount, rootName, entries, trailingBytes };
+}
+
+function readSahDirectory(reader, parent, isRoot, entries, safSize) {
+  const name = readSahString(reader, "directory.name");
+  const current = isRoot ? "" : joinArchivePath(parent, name);
+
+  const fileCount = readSahCount(reader, "file_count");
+  for (let index = 0; index < fileCount; index += 1) {
+    const filename = readSahString(reader, `file[${index}].name`);
+    const offset = reader.i64(`file[${index}].offset`);
+    const length = reader.i32(`file[${index}].length`);
+    const version = reader.i32(`file[${index}].version`);
+    if (length < 0) throw new Error(`${reader.label}: invalid file length ${length}`);
+    if (offset + length > safSize) {
+      throw new Error(`${reader.label}: ${joinArchivePath(current, filename)} exceeds SAF size`);
+    }
+    entries.push({ path: joinArchivePath(current, filename), offset, length, version });
+  }
+
+  const directoryCount = readSahCount(reader, "directory_count");
+  for (let index = 0; index < directoryCount; index += 1) {
+    readSahDirectory(reader, current, false, entries, safSize);
+  }
+
+  return name;
+}
+
+function readSahCount(reader, field) {
+  const value = reader.i32(field);
+  if (value < 0 || value > 1_000_000) throw new Error(`${reader.label}: invalid ${field} ${value}`);
+  return value;
+}
+
+function readSahString(reader, field) {
+  const length = reader.i32(`${field}.length`);
+  if (length < 0 || length > 4096) throw new Error(`${reader.label}: invalid ${field} length ${length}`);
+  const bytes = reader.take(length, field);
+  const end = bytes.length > 0 && bytes[bytes.length - 1] === 0 ? bytes.length - 1 : bytes.length;
+  return archiveTextDecoder.decode(bytes.subarray(0, end));
+}
+
+function joinArchivePath(parent, name) {
+  const path = normalizePath(parent ? `${parent}/${name}` : name);
+  const parts = path.split("/");
+  if (path.startsWith("/") || parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`Unsafe archive path ${path}`);
+  }
+  return path;
 }
 
 function parseEft(buffer, label = "effect") {
@@ -243,12 +335,43 @@ class AssetStore {
     this.fallbackTexture = makeFallbackTexture();
   }
 
-  addFiles(fileList) {
-    for (const file of fileList ?? []) {
-      const path = normalizePath(file.webkitRelativePath || file.name);
-      this.files.set(path, file);
-      this.files.set(normalizePath(file.name), file);
+  async addFiles(fileList) {
+    const files = Array.from(fileList ?? []);
+    for (const file of files) {
+      this.indexFile(file);
     }
+
+    const sahFiles = files.filter((file) => normalizePath(file.name).endsWith(".sah"));
+    for (const sahFile of sahFiles) {
+      const safFile = findMatchingSafFile(sahFile, files);
+      if (!safFile) {
+        this.log(`archive ${sahFile.name}: matching .saf was not selected`);
+        continue;
+      }
+      await this.addArchive(sahFile, safFile);
+    }
+  }
+
+  indexFile(file, path = file.webkitRelativePath || file.name) {
+    const normalized = normalizePath(path);
+    this.files.set(normalized, file);
+    this.files.set(normalizePath(file.name), file);
+  }
+
+  async addArchive(sahFile, safFile) {
+    const archive = parseSah(await sahFile.arrayBuffer(), sahFile.name, safFile.size);
+    for (const entry of archive.entries) {
+      this.indexFile(new ArchiveAsset(safFile, entry), entry.path);
+    }
+    const countNote = archive.expectedFileCount === archive.entries.length
+      ? ""
+      : `; header expected ${archive.expectedFileCount}`;
+    const trailingNote = archive.trailingBytes === 0
+      ? ""
+      : `; ignored ${archive.trailingBytes} trailing SAH bytes`;
+    this.log(
+      `indexed ${archive.entries.length} files from ${sahFile.name}/${safFile.name}${countNote}${trailingNote}`,
+    );
   }
 
   listEffectLibraries() {
@@ -278,17 +401,17 @@ class AssetStore {
   async readBuffer(candidates) {
     const file = this.findFile(candidates);
     if (!file) return null;
-    const path = normalizePath(file.webkitRelativePath || file.name);
+    const path = assetPath(file);
     return { file, path: displayAssetPath(path), fullPath: path, buffer: await file.arrayBuffer() };
   }
 
   async loadTexture(candidates, mirror = false) {
     const file = this.findFile(candidates);
     if (!file) return { texture: this.fallbackTexture, file: null, path: null };
-    const path = normalizePath(file.webkitRelativePath || file.name);
+    const path = assetPath(file);
     const key = `${path}:${mirror ? "mirror" : "repeat"}`;
     if (this.textureCache.has(key)) return this.textureCache.get(key);
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(assetBlob(file));
     try {
       const loader = file.name.toLowerCase().endsWith(".dds") ? new DDSLoader() : new THREE.TextureLoader();
       const texture = await loader.loadAsync(url);
@@ -307,6 +430,24 @@ class AssetStore {
       URL.revokeObjectURL(url);
     }
   }
+}
+
+function findMatchingSafFile(sahFile, files) {
+  const sahPath = assetPath(sahFile);
+  const expectedPath = sahPath.replace(/\.sah$/i, ".saf");
+  const expectedName = normalizePath(sahFile.name).replace(/\.sah$/i, ".saf");
+
+  return files.find((file) => assetPath(file) === expectedPath)
+    || files.find((file) => normalizePath(file.name) === expectedName)
+    || null;
+}
+
+function assetPath(file) {
+  return normalizePath(file.webkitRelativePath || file.name);
+}
+
+function assetBlob(file) {
+  return file instanceof Blob ? file : file.blob();
 }
 
 class EffectPreview {
@@ -1210,6 +1351,9 @@ const logElement = document.querySelector("#log");
 const libraryStats = document.querySelector("#libraryStats");
 const renderStats = document.querySelector("#renderStats");
 const effectStats = document.querySelector("#effectStats");
+const assetStatus = document.querySelector("#assetStatus");
+const assetStatusTitle = document.querySelector("#assetStatusTitle");
+const assetStatusDetail = document.querySelector("#assetStatusDetail");
 const libraryFileSelect = document.querySelector("#libraryFileSelect");
 const sequenceSelect = document.querySelector("#sequenceSelect");
 const effectSelect = document.querySelector("#effectSelect");
@@ -1228,6 +1372,30 @@ let indexedLibraries = [];
 
 function log(message) {
   logElement.textContent = `${new Date().toLocaleTimeString()} ${message}\n${logElement.textContent}`.slice(0, 6000);
+}
+
+function setAssetStatus(kind, title, detail) {
+  assetStatus.className = `status-card status-${kind}`;
+  assetStatusTitle.textContent = title;
+  assetStatusDetail.textContent = detail;
+}
+
+function updateIndexedEffectStatus(sourceLabel) {
+  if (indexedLibraries.length === 0) {
+    setAssetStatus("empty", "No effects found", `${sourceLabel}; no EFT, EF2, or EF3 files were indexed.`);
+    return;
+  }
+
+  const noun = indexedLibraries.length === 1 ? "effect library" : "effect libraries";
+  setAssetStatus(
+    "ready",
+    `${indexedLibraries.length} ${noun} available`,
+    `${sourceLabel}; choose one from the EFT list below.`,
+  );
+}
+
+function effectLoadSummary(library) {
+  return `${library.format}: ${library.effects.length} components, ${library.sequences.length} sequences, ${library.meshes.length} meshes, ${library.textures.length} textures`;
 }
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1257,10 +1425,20 @@ resetSelectors("Load an EFT file first");
 populateLibraryFileSelect([]);
 
 document.querySelector("#dataRootInput").addEventListener("change", async (event) => {
-  assetStore.addFiles(event.target.files);
+  await assetStore.addFiles(event.target.files);
   indexedLibraries = assetStore.listEffectLibraries();
   populateLibraryFileSelect(indexedLibraries);
+  updateIndexedEffectStatus(`Indexed ${event.target.files.length} data files`);
   log(`indexed ${event.target.files.length} files from data directory; found ${indexedLibraries.length} EFT libraries`);
+  if (preview.library) await rebuild();
+});
+
+document.querySelector("#dataArchiveInput").addEventListener("change", async (event) => {
+  await assetStore.addFiles(event.target.files);
+  indexedLibraries = assetStore.listEffectLibraries();
+  populateLibraryFileSelect(indexedLibraries);
+  updateIndexedEffectStatus(`Indexed ${event.target.files.length} archive files`);
+  log(`indexed ${event.target.files.length} archive files; found ${indexedLibraries.length} EFT libraries`);
   if (preview.library) await rebuild();
 });
 
@@ -1273,7 +1451,7 @@ libraryFileSelect.addEventListener("change", async () => {
 document.querySelector("#eftInput").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
-  assetStore.addFiles(event.target.files);
+  await assetStore.addFiles(event.target.files);
   indexedLibraries = assetStore.listEffectLibraries();
   populateLibraryFileSelect(indexedLibraries);
   await loadEftFile(file, file.name);
@@ -1284,11 +1462,14 @@ async function loadEftFile(file, label) {
     const library = parseEft(await file.arrayBuffer(), file.name);
     preview.setLibrary(library);
     populateSelectors(library);
-    libraryStats.textContent = `${library.format}: ${library.effects.length} components, ${library.sequences.length} sequences, ${library.meshes.length} meshes, ${library.textures.length} textures`;
+    const summary = effectLoadSummary(library);
+    libraryStats.textContent = summary;
+    setAssetStatus("loaded", `Loaded ${label}`, summary);
     log(`loaded ${label}: ${library.effects.length} components, ${library.sequences.length} sequences`);
     await rebuild();
   } catch (error) {
     resetSelectors("EFT parse failed");
+    setAssetStatus("error", "Could not load EFT", error.message);
     log(error.message);
   }
 }

@@ -43,6 +43,71 @@ label {
   color: #b9c0ca;
 }
 
+.status-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid #30343b;
+  border-radius: 6px;
+  background: #10141a;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: #6b7280;
+}
+
+.status-card strong,
+.status-card span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.status-card strong {
+  color: #f2f4f7;
+}
+
+.status-card span:not(.status-dot) {
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.status-ready {
+  border-color: #365f52;
+  background: #101b18;
+}
+
+.status-ready .status-dot {
+  background: #43c59e;
+  box-shadow: 0 0 0 3px rgba(67, 197, 158, 0.12);
+}
+
+.status-loaded {
+  border-color: #4d6f9b;
+  background: #101721;
+}
+
+.status-loaded .status-dot {
+  background: #7db7ff;
+  box-shadow: 0 0 0 3px rgba(125, 183, 255, 0.12);
+}
+
+.status-error {
+  border-color: #7a4242;
+  background: #211313;
+}
+
+.status-error .status-dot {
+  background: #ff7d7d;
+  box-shadow: 0 0 0 3px rgba(255, 125, 125, 0.12);
+}
+
 input,
 select,
 button {

@@ -12,9 +12,18 @@
         <h1>EFT Renderer</h1>
 
         <label>
-          Data directory
+          Data directory / SAH archive
           <input id="dataRootInput" type="file" webkitdirectory multiple />
+          <input id="dataArchiveInput" type="file" accept=".sah,.saf,.SAH,.SAF" multiple />
         </label>
+
+        <div id="assetStatus" class="status-card status-empty" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="assetStatusTitle">No effects indexed</strong>
+            <span id="assetStatusDetail">Select a data directory or a SAH/SAF archive pair.</span>
+          </div>
+        </div>
 
         <label>
           EFT from data directory
