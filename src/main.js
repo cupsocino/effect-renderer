@@ -1354,6 +1354,12 @@ const effectStats = document.querySelector("#effectStats");
 const assetStatus = document.querySelector("#assetStatus");
 const assetStatusTitle = document.querySelector("#assetStatusTitle");
 const assetStatusDetail = document.querySelector("#assetStatusDetail");
+const directoryModeButton = document.querySelector("#directoryModeButton");
+const archiveModeButton = document.querySelector("#archiveModeButton");
+const dataRootLabel = document.querySelector("#dataRootLabel");
+const dataArchiveLabel = document.querySelector("#dataArchiveLabel");
+const dataRootInput = document.querySelector("#dataRootInput");
+const dataArchiveInput = document.querySelector("#dataArchiveInput");
 const libraryFileSelect = document.querySelector("#libraryFileSelect");
 const sequenceSelect = document.querySelector("#sequenceSelect");
 const effectSelect = document.querySelector("#effectSelect");
@@ -1398,6 +1404,16 @@ function effectLoadSummary(library) {
   return `${library.format}: ${library.effects.length} components, ${library.sequences.length} sequences, ${library.meshes.length} meshes, ${library.textures.length} textures`;
 }
 
+function setDataSourceMode(mode) {
+  const archiveMode = mode === "archive";
+  directoryModeButton.classList.toggle("active", !archiveMode);
+  archiveModeButton.classList.toggle("active", archiveMode);
+  directoryModeButton.setAttribute("aria-pressed", String(!archiveMode));
+  archiveModeButton.setAttribute("aria-pressed", String(archiveMode));
+  dataRootLabel.hidden = archiveMode;
+  dataArchiveLabel.hidden = !archiveMode;
+}
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setClearColor(0x0d0f13, 1);
@@ -1424,7 +1440,10 @@ preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
 resetSelectors("Load an EFT file first");
 populateLibraryFileSelect([]);
 
-document.querySelector("#dataRootInput").addEventListener("change", async (event) => {
+directoryModeButton.addEventListener("click", () => setDataSourceMode("directory"));
+archiveModeButton.addEventListener("click", () => setDataSourceMode("archive"));
+
+dataRootInput.addEventListener("change", async (event) => {
   await assetStore.addFiles(event.target.files);
   indexedLibraries = assetStore.listEffectLibraries();
   populateLibraryFileSelect(indexedLibraries);
@@ -1433,7 +1452,7 @@ document.querySelector("#dataRootInput").addEventListener("change", async (event
   if (preview.library) await rebuild();
 });
 
-document.querySelector("#dataArchiveInput").addEventListener("change", async (event) => {
+dataArchiveInput.addEventListener("change", async (event) => {
   await assetStore.addFiles(event.target.files);
   indexedLibraries = assetStore.listEffectLibraries();
   populateLibraryFileSelect(indexedLibraries);

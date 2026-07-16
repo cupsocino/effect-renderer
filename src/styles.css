@@ -43,6 +43,34 @@ label {
   color: #b9c0ca;
 }
 
+.source-picker {
+  margin: 0 0 14px;
+}
+
+.source-picker label {
+  margin: 0;
+}
+
+.source-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.source-mode button {
+  padding: 7px 8px;
+}
+
+.source-mode button.active {
+  border-color: #7db7ff;
+  background: #17304d;
+}
+
+[hidden] {
+  display: none !important;
+}
+
 .status-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

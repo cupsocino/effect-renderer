@@ -11,11 +11,22 @@
       <aside id="panel">
         <h1>EFT Renderer</h1>
 
-        <label>
-          Data directory / SAH archive
-          <input id="dataRootInput" type="file" webkitdirectory multiple />
-          <input id="dataArchiveInput" type="file" accept=".sah,.saf,.SAH,.SAF" multiple />
-        </label>
+        <div class="source-picker">
+          <div class="source-mode" role="group" aria-label="Data source">
+            <button id="directoryModeButton" type="button" class="active" aria-pressed="true">Directory</button>
+            <button id="archiveModeButton" type="button" aria-pressed="false">SAH/SAF</button>
+          </div>
+
+          <label id="dataRootLabel">
+            Data directory
+            <input id="dataRootInput" type="file" webkitdirectory multiple />
+          </label>
+
+          <label id="dataArchiveLabel" hidden>
+            SAH/SAF archive pair
+            <input id="dataArchiveInput" type="file" accept=".sah,.saf,.SAH,.SAF" multiple />
+          </label>
+        </div>
 
         <div id="assetStatus" class="status-card status-empty" role="status" aria-live="polite">
           <span class="status-dot"></span>
