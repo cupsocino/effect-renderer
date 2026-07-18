@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shaiya EFT Renderer</title>
+    <title>Shaiya EFT &amp; Cloak Renderer</title>
   </head>
   <body>
     <main id="app">
       <section id="viewport"></section>
       <aside id="panel">
-        <h1>EFT Renderer</h1>
+        <h1>EFT &amp; Cloak Renderer</h1>
 
         <div class="source-picker">
           <div class="source-mode" role="group" aria-label="Data source">
@@ -31,14 +31,15 @@
         <div id="assetStatus" class="status-card status-empty" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <div>
-            <strong id="assetStatusTitle">No effects indexed</strong>
+            <strong id="assetStatusTitle">No assets indexed</strong>
             <span id="assetStatusDetail">Select a data directory or a SAH/SAF archive pair.</span>
           </div>
         </div>
 
-        <div class="browser-tabs" role="tablist" aria-label="Effect browser mode">
+        <div class="browser-tabs" role="tablist" aria-label="Asset browser mode">
           <button id="libraryTabButton" type="button" class="active" role="tab" aria-selected="true" aria-controls="libraryTab">EFT Library</button>
           <button id="skillTabButton" type="button" role="tab" aria-selected="false" aria-controls="skillTab">Skill Effects</button>
+          <button id="cloakTabButton" type="button" role="tab" aria-selected="false" aria-controls="cloakTab">Cloaks</button>
         </div>
 
         <section id="libraryTab" class="browser-panel" role="tabpanel" aria-labelledby="libraryTabButton">
@@ -94,6 +95,45 @@
           <div id="skillEffectDetail" class="skill-effect-detail">Select a skill effect.</div>
         </section>
 
+        <section id="cloakTab" class="browser-panel cloak-panel" role="tabpanel" aria-labelledby="cloakTabButton" hidden>
+          <label>
+            PC cloak definition
+            <select id="cloakFileSelect" disabled>
+              <option>Index a PS0198 data directory first</option>
+            </select>
+          </label>
+
+          <label>
+            Cloth / texture link
+            <select id="cloakLinkSelect" disabled>
+              <option>Choose a PC file</option>
+            </select>
+          </label>
+
+          <div id="cloakStatus" class="cloak-status">No cloak loaded.</div>
+
+          <fieldset class="cloak-physics-controls">
+            <legend>Cloth physics</legend>
+            <label>
+              <span>Wind <output id="cloakWindValue">0.8</output></span>
+              <input id="cloakWind" type="range" min="0" max="3" value="0.8" step="0.1" />
+            </label>
+            <label>
+              <span>Gravity <output id="cloakGravityValue">1.2</output></span>
+              <input id="cloakGravity" type="range" min="0" max="4" value="1.2" step="0.1" />
+            </label>
+            <label>
+              Solver iterations
+              <input id="cloakIterations" type="number" min="1" max="16" value="6" step="1" />
+            </label>
+            <div class="cloak-toggle-grid">
+              <label><input id="cloakBodyMotion" type="checkbox" checked /> Body motion</label>
+              <label><input id="cloakDebug" type="checkbox" /> Show pins/collider</label>
+            </div>
+            <button id="resetCloakButton" type="button">Reset cloth</button>
+          </fieldset>
+        </section>
+
         <label>
           Particle level <span id="particleLevelLabel">5</span>
           <input id="particleLevel" type="range" min="0" max="20" value="5" />
@@ -104,7 +144,7 @@
           <input id="replayDelaySeconds" type="number" min="0" step="0.5" value="1" />
         </label>
 
-        <fieldset>
+        <fieldset id="placementControls">
           <legend>Placement</legend>
           <div class="placement-grid">
             <label>
@@ -141,11 +181,11 @@
         </div>
 
         <dl id="stats">
-          <dt>Library</dt>
+          <dt id="libraryStatsLabel">Library</dt>
           <dd id="libraryStats">No EFT loaded</dd>
           <dt>Rendered</dt>
           <dd id="renderStats">0 objects</dd>
-          <dt>Components</dt>
+          <dt id="renderDetailLabel">Components</dt>
           <dd id="effectStats">No components</dd>
         </dl>
 

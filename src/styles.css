@@ -236,7 +236,7 @@ button:hover {
 
 .browser-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   margin: 0 0 14px;
 }
@@ -248,6 +248,55 @@ button:hover {
 
 .browser-panel {
   margin: 0 0 14px;
+}
+
+.cloak-status {
+  margin: 0 0 14px;
+  padding: 10px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: #cdd5df;
+  border: 1px solid #30343b;
+  border-radius: 6px;
+  background: #10141a;
+  font-size: 11px;
+}
+
+.cloak-physics-controls > label > span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.cloak-physics-controls output {
+  color: #e4a464;
+  font-variant-numeric: tabular-nums;
+}
+
+.cloak-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.cloak-toggle-grid label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px;
+  border: 1px solid #303741;
+  border-radius: 5px;
+  background: #181c22;
+  font-size: 11px;
+}
+
+.cloak-toggle-grid input {
+  margin: 0;
+}
+
+.cloak-physics-controls button {
+  width: 100%;
 }
 
 .skill-role-fieldset {

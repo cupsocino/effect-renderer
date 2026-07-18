@@ -4,6 +4,7 @@ import { parseSkillSdataNames } from "./skill_sdata.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { DDSLoader } from "three/examples/jsm/loaders/DDSLoader.js";
+import { CloakPreview } from "./cloak_renderer.js";
 
 const maxParticleLevel = 20;
 const maxRenderedParticlesPerComponent = 300;
@@ -388,6 +389,23 @@ class AssetStore {
     }
     libraries.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
     return libraries;
+  }
+
+  listCloakPcAssets() {
+    const seen = new Set();
+    const cloaks = [];
+    for (const [path, file] of this.files.entries()) {
+      if (!path.endsWith(".pc") || !path.includes("cloak/character/") || seen.has(file)) continue;
+      seen.add(file);
+      const marker = path.indexOf("cloak/character/");
+      cloaks.push({
+        path,
+        displayPath: marker >= 0 ? path.slice(marker) : path,
+        file,
+      });
+    }
+    cloaks.sort((left, right) => left.displayPath.localeCompare(right.displayPath, undefined, { numeric: true }));
+    return cloaks;
   }
 
   findFile(candidates) {
@@ -1288,7 +1306,7 @@ function normalizePath(path) {
 }
 
 function displayAssetPath(path) {
-  for (const marker of ["effect/", "entity/texture/"]) {
+  for (const marker of ["effect/", "entity/texture/", "cloak/"]) {
     const index = path.indexOf(marker);
     if (index >= 0) return path.slice(index);
   }
@@ -1393,8 +1411,10 @@ const dataRootInput = document.querySelector("#dataRootInput");
 const dataArchiveInput = document.querySelector("#dataArchiveInput");
 const libraryTabButton = document.querySelector("#libraryTabButton");
 const skillTabButton = document.querySelector("#skillTabButton");
+const cloakTabButton = document.querySelector("#cloakTabButton");
 const libraryTab = document.querySelector("#libraryTab");
 const skillTab = document.querySelector("#skillTab");
+const cloakTab = document.querySelector("#cloakTab");
 const libraryFileSelect = document.querySelector("#libraryFileSelect");
 const sequenceSelect = document.querySelector("#sequenceSelect");
 const effectSelect = document.querySelector("#effectSelect");
@@ -1406,6 +1426,20 @@ const skillRoleButtons = Array.from(document.querySelectorAll("[data-skill-role]
 const particleLevel = document.querySelector("#particleLevel");
 const particleLevelLabel = document.querySelector("#particleLevelLabel");
 const replayDelaySeconds = document.querySelector("#replayDelaySeconds");
+const cloakFileSelect = document.querySelector("#cloakFileSelect");
+const cloakLinkSelect = document.querySelector("#cloakLinkSelect");
+const cloakStatus = document.querySelector("#cloakStatus");
+const cloakWind = document.querySelector("#cloakWind");
+const cloakWindValue = document.querySelector("#cloakWindValue");
+const cloakGravity = document.querySelector("#cloakGravity");
+const cloakGravityValue = document.querySelector("#cloakGravityValue");
+const cloakIterations = document.querySelector("#cloakIterations");
+const cloakBodyMotion = document.querySelector("#cloakBodyMotion");
+const cloakDebug = document.querySelector("#cloakDebug");
+const resetCloakButton = document.querySelector("#resetCloakButton");
+const placementControls = document.querySelector("#placementControls");
+const libraryStatsLabel = document.querySelector("#libraryStatsLabel");
+const renderDetailLabel = document.querySelector("#renderDetailLabel");
 const placementInputs = {
   x: document.querySelector("#placementX"),
   y: document.querySelector("#placementY"),
@@ -1415,6 +1449,7 @@ const placementInputs = {
   roll: document.querySelector("#placementRoll"),
 };
 let indexedLibraries = [];
+let indexedCloaks = [];
 let activeBrowserTab = "library";
 let selectedSkillRole = "startCast";
 let skillNameOverrides = new Map();
@@ -1441,17 +1476,117 @@ function setAssetStatus(kind, title, detail) {
 }
 
 function updateIndexedEffectStatus(sourceLabel) {
-  if (indexedLibraries.length === 0) {
-    setAssetStatus("empty", "No effects found", `${sourceLabel}; no EFT, EF2, or EF3 files were indexed.`);
+  if (indexedLibraries.length === 0 && indexedCloaks.length === 0) {
+    setAssetStatus("empty", "No supported assets found", `${sourceLabel}; no effect libraries or cloak PC files were indexed.`);
     return;
   }
 
-  const noun = indexedLibraries.length === 1 ? "effect library" : "effect libraries";
+  const effectNoun = indexedLibraries.length === 1 ? "effect library" : "effect libraries";
+  const cloakNoun = indexedCloaks.length === 1 ? "cloak" : "cloaks";
   setAssetStatus(
     "ready",
-    `${indexedLibraries.length} ${noun} available`,
-    `${sourceLabel}; choose one from the EFT list below.`,
+    `${indexedLibraries.length} ${effectNoun}, ${indexedCloaks.length} ${cloakNoun}`,
+    `${sourceLabel}; choose an effect or open the Cloaks tab.`,
   );
+}
+
+function populateCloakFileSelect(cloaks) {
+  cloakFileSelect.replaceChildren();
+  if (cloaks.length === 0) {
+    cloakFileSelect.appendChild(new Option("No cloak PC files indexed", "-1"));
+    cloakFileSelect.disabled = true;
+    cloakLinkSelect.disabled = true;
+    cloakLinkSelect.replaceChildren(new Option("Choose a PC file", "-1"));
+    return;
+  }
+  cloaks.forEach((entry, index) => {
+    const option = new Option(entry.displayPath.replace("cloak/character/", ""), String(index));
+    option.title = entry.path;
+    cloakFileSelect.appendChild(option);
+  });
+  const preferred = cloaks.findIndex((entry) => entry.path.endsWith("cloak/character/human/1_humf.pc"));
+  cloakFileSelect.value = String(preferred >= 0 ? preferred : 0);
+  cloakFileSelect.disabled = false;
+}
+
+let cloakLoadGeneration = 0;
+
+async function loadSelectedCloak() {
+  const entry = indexedCloaks[Number(cloakFileSelect.value)];
+  if (!entry) return;
+  const generation = ++cloakLoadGeneration;
+  cloakFileSelect.disabled = true;
+  cloakLinkSelect.disabled = true;
+  cloakLinkSelect.replaceChildren(new Option("Loading PC definition…", "-1"));
+  cloakStatus.textContent = `Loading ${entry.displayPath}…`;
+  try {
+    const pc = await cloakPreview.loadPc(entry);
+    if (generation !== cloakLoadGeneration) return;
+    cloakLinkSelect.replaceChildren();
+    pc.links.forEach((_, index) => {
+      cloakLinkSelect.appendChild(new Option(cloakPreview.linkLabel(index), String(index)));
+    });
+    cloakLinkSelect.value = "0";
+    cloakLinkSelect.disabled = pc.links.length === 0;
+    libraryStats.textContent = `${entry.displayPath}\n${pc.links.length} cloth links`;
+    if (pc.links.length > 0) await loadSelectedCloakLink(generation, true);
+    else cloakStatus.textContent = "This PC file contains no cloth links.";
+    log(`loaded cloak ${entry.displayPath}: ${pc.links.length} cloth links`);
+  } catch (error) {
+    if (generation !== cloakLoadGeneration) return;
+    cloakStatus.textContent = `Could not load cloak: ${error.message}`;
+    setAssetStatus("error", "Could not load cloak", error.message);
+    log(error.stack || error.message);
+  } finally {
+    if (generation === cloakLoadGeneration) cloakFileSelect.disabled = false;
+  }
+}
+
+async function loadSelectedCloakLink(generation = cloakLoadGeneration, frame = false) {
+  const linkIndex = Number(cloakLinkSelect.value);
+  if (!Number.isInteger(linkIndex) || linkIndex < 0) return;
+  cloakLinkSelect.disabled = true;
+  cloakStatus.textContent = `Loading cloth link ${linkIndex}…`;
+  try {
+    const summary = await cloakPreview.selectLink(linkIndex);
+    if (generation !== cloakLoadGeneration) return;
+    if (frame) cloakPreview.frameCamera(camera, controls);
+    cloakStatus.textContent = [
+      `${summary.grid} cloth · ${summary.vertices} vertices · ${summary.anchors} bone pins`,
+      `Flexible: ${summary.flexiblePath}`,
+      `Rigid: ${summary.rigidPath}`,
+      `Texture ${summary.textureIndex}: ${summary.texturePath || "fallback"}`,
+    ].join("\n");
+    renderStats.textContent = "1 simulated cloak";
+    effectStats.textContent = `PC link ${summary.linkIndex}\nGrid ${summary.grid}\n${summary.anchors} pinned vertices`;
+    const cloakName = indexedCloaks[Number(cloakFileSelect.value)]?.displayPath ?? "cloak";
+    setAssetStatus(
+      "loaded",
+      `Loaded ${cloakName}`,
+      `${summary.grid} flexible grid; ${summary.anchors} bone pins; texture ${summary.textureIndex}`,
+    );
+  } catch (error) {
+    if (generation !== cloakLoadGeneration) return;
+    cloakStatus.textContent = `Could not load cloth link: ${error.message}`;
+    setAssetStatus("error", "Could not render cloak", error.message);
+    log(error.stack || error.message);
+  } finally {
+    if (generation === cloakLoadGeneration && cloakPreview.pc?.links.length > 0) {
+      cloakLinkSelect.disabled = false;
+    }
+  }
+}
+
+function syncCloakSettings() {
+  cloakWindValue.value = Number(cloakWind.value).toFixed(1);
+  cloakGravityValue.value = Number(cloakGravity.value).toFixed(1);
+  cloakPreview.setSettings({
+    wind: Number(cloakWind.value),
+    gravity: Number(cloakGravity.value),
+    iterations: Number(cloakIterations.value),
+    motionEnabled: cloakBodyMotion.checked,
+    debug: cloakDebug.checked,
+  });
 }
 
 async function refreshSkillNamesFromIndexedData() {
@@ -1519,23 +1654,30 @@ controls.target.set(0, 5, 0);
 controls.enableDamping = true;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x20222a, 1.2));
+const keyLight = new THREE.DirectionalLight(0xffe3c2, 1.4);
+keyLight.position.set(4, 8, 6);
+scene.add(keyLight);
 const grid = new THREE.GridHelper(60, 30, 0x445064, 0x242a34);
 scene.add(grid);
 
 const assetStore = new AssetStore(log);
 const preview = new EffectPreview(scene, camera, assetStore, log);
+const cloakPreview = new CloakPreview(scene, assetStore, log);
 preview.setPlacement(readPlacementControls());
 preview.setReplayDelaySeconds(readNumericInput(replayDelaySeconds));
 resetSelectors("Load an EFT file first");
 syncReplayDelayControl();
 populateLibraryFileSelect([]);
+populateCloakFileSelect([]);
 populateSkillBrowser();
+syncCloakSettings();
 setBrowserTab("library");
 
 directoryModeButton.addEventListener("click", () => setDataSourceMode("directory"));
 archiveModeButton.addEventListener("click", () => setDataSourceMode("archive"));
 libraryTabButton.addEventListener("click", () => setBrowserTab("library"));
 skillTabButton.addEventListener("click", () => setBrowserTab("skill"));
+cloakTabButton.addEventListener("click", () => setBrowserTab("cloak"));
 skillClassSelect.addEventListener("change", () => {
   populateSkillSelect();
   selectDefaultSkillRole();
@@ -1550,9 +1692,12 @@ dataRootInput.addEventListener("change", async (event) => {
   await assetStore.addFiles(event.target.files);
   const skillNameStatus = await refreshSkillNamesFromIndexedData();
   indexedLibraries = assetStore.listEffectLibraries();
+  indexedCloaks = assetStore.listCloakPcAssets();
   populateLibraryFileSelect(indexedLibraries);
+  populateCloakFileSelect(indexedCloaks);
   updateIndexedEffectStatus(`Indexed ${event.target.files.length} data files; ${skillNameStatus}`);
-  log(`indexed ${event.target.files.length} files from data directory; found ${indexedLibraries.length} EFT libraries`);
+  log(`indexed ${event.target.files.length} files from data directory; found ${indexedLibraries.length} EFT libraries and ${indexedCloaks.length} cloak PC files`);
+  if (activeBrowserTab === "cloak" && indexedCloaks.length > 0) await loadSelectedCloak();
   if (preview.library) await rebuild();
 });
 
@@ -1560,9 +1705,12 @@ dataArchiveInput.addEventListener("change", async (event) => {
   await assetStore.addFiles(event.target.files);
   const skillNameStatus = await refreshSkillNamesFromIndexedData();
   indexedLibraries = assetStore.listEffectLibraries();
+  indexedCloaks = assetStore.listCloakPcAssets();
   populateLibraryFileSelect(indexedLibraries);
+  populateCloakFileSelect(indexedCloaks);
   updateIndexedEffectStatus(`Indexed ${event.target.files.length} archive files; ${skillNameStatus}`);
-  log(`indexed ${event.target.files.length} archive files; found ${indexedLibraries.length} EFT libraries`);
+  log(`indexed ${event.target.files.length} archive files; found ${indexedLibraries.length} EFT libraries and ${indexedCloaks.length} cloak PC files`);
+  if (activeBrowserTab === "cloak" && indexedCloaks.length > 0) await loadSelectedCloak();
   if (preview.library) await rebuild();
 });
 
@@ -1577,7 +1725,9 @@ document.querySelector("#eftInput").addEventListener("change", async (event) => 
   if (!file) return;
   await assetStore.addFiles(event.target.files);
   indexedLibraries = assetStore.listEffectLibraries();
+  indexedCloaks = assetStore.listCloakPcAssets();
   populateLibraryFileSelect(indexedLibraries);
+  populateCloakFileSelect(indexedCloaks);
   await loadEftFile(file, file.name);
 });
 
@@ -1606,7 +1756,17 @@ async function loadEftFile(file, label, selectorOptions = {}) {
 
 sequenceSelect.addEventListener("change", rebuild);
 effectSelect.addEventListener("change", rebuild);
-document.querySelector("#rebuildButton").addEventListener("click", rebuild);
+cloakFileSelect.addEventListener("change", loadSelectedCloak);
+cloakLinkSelect.addEventListener("change", () => loadSelectedCloakLink());
+for (const input of [cloakWind, cloakGravity, cloakIterations, cloakBodyMotion, cloakDebug]) {
+  input.addEventListener("input", syncCloakSettings);
+  input.addEventListener("change", syncCloakSettings);
+}
+resetCloakButton.addEventListener("click", () => cloakPreview.reset());
+document.querySelector("#rebuildButton").addEventListener("click", () => {
+  if (activeBrowserTab === "cloak") cloakPreview.reset();
+  else rebuild();
+});
 document.querySelector("#pauseButton").addEventListener("click", () => {
   preview.paused = !preview.paused;
   document.querySelector("#pauseButton").textContent = preview.paused ? "Resume" : "Pause";
@@ -1632,12 +1792,33 @@ replayDelaySeconds.addEventListener("input", () => {
 function setBrowserTab(tab) {
   activeBrowserTab = tab;
   const skillMode = tab === "skill";
-  libraryTab.hidden = skillMode;
+  const cloakMode = tab === "cloak";
+  const libraryMode = !skillMode && !cloakMode;
+  libraryTab.hidden = !libraryMode;
   skillTab.hidden = !skillMode;
-  libraryTabButton.classList.toggle("active", !skillMode);
+  cloakTab.hidden = !cloakMode;
+  libraryTabButton.classList.toggle("active", libraryMode);
   skillTabButton.classList.toggle("active", skillMode);
-  libraryTabButton.setAttribute("aria-selected", String(!skillMode));
+  cloakTabButton.classList.toggle("active", cloakMode);
+  libraryTabButton.setAttribute("aria-selected", String(libraryMode));
   skillTabButton.setAttribute("aria-selected", String(skillMode));
+  cloakTabButton.setAttribute("aria-selected", String(cloakMode));
+  particleLevel.closest("label").hidden = cloakMode;
+  replayDelaySeconds.closest("label").hidden = cloakMode;
+  placementControls.hidden = cloakMode;
+  libraryStatsLabel.textContent = cloakMode ? "PC definition" : "Library";
+  renderDetailLabel.textContent = cloakMode ? "Cloak" : "Components";
+  preview.group.visible = !cloakMode;
+  cloakPreview.setVisible(cloakMode);
+  document.querySelector("#rebuildButton").textContent = cloakMode ? "Reset cloth" : "Rebuild";
+  if (cloakMode) {
+    if (!cloakPreview.pc && indexedCloaks.length > 0) loadSelectedCloak();
+  } else if (preview.library) {
+    libraryStats.textContent = effectLoadSummary(preview.library);
+    rebuild();
+  } else {
+    libraryStats.textContent = "No EFT loaded";
+  }
 }
 
 function populateSkillBrowser() {
@@ -2157,10 +2338,16 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-function animate() {
+let lastFrameSeconds = performance.now() / 1000;
+
+function animate(frameMilliseconds = performance.now()) {
   requestAnimationFrame(animate);
+  const frameSeconds = frameMilliseconds / 1000;
+  const deltaSeconds = Math.max(0, frameSeconds - lastFrameSeconds);
+  lastFrameSeconds = frameSeconds;
   controls.update();
   preview.update();
+  if (!preview.paused) cloakPreview.update(deltaSeconds);
   renderer.render(scene, camera);
 }
 
